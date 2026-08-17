@@ -323,7 +323,7 @@ elif page == "Dataset Dashboard":
         st.bar_chart(sentiment_rating)
 
         st.write("### Review Length Summary")
-    st.write(review_lengths.describe())
+        st.write(review_lengths.describe())
 
 elif page == "Model Performance":
     st.subheader("Model Performance")
