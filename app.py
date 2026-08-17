@@ -89,13 +89,17 @@ def load_model():
 @st.cache_data
 def load_dataset():
     base_dir = os.path.dirname(__file__)
-    csv_path = os.path.join(base_dir, "data/processed/video_games_sentiment_clean.csv")
+    # Try both possible filenames
+    csv_path1 = os.path.join(base_dir, "data/processed/video_games_sentiment_clean.csv")
+    csv_path2 = os.path.join(base_dir, "data/processed/video_games_sentiment_50k.csv")
     
-    if not os.path.exists(csv_path):
-        st.warning(f"Dataset not found at {csv_path}. The dataset analysis page will not work.")
+    if os.path.exists(csv_path1):
+        return pd.read_csv(csv_path1)
+    elif os.path.exists(csv_path2):
+        return pd.read_csv(csv_path2)
+    else:
+        st.warning("Dataset files not found. Dataset analysis page will not work.")
         return None
-    
-    return pd.read_csv(csv_path)
 
 
 @st.cache_data
