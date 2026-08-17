@@ -16,7 +16,6 @@ from sklearn.model_selection import train_test_split
 
 st.set_page_config(
     page_title="Amazon Review Sentiment Analyzer",
-    page_icon="🎮",
     layout="wide",
 )
 
@@ -196,7 +195,7 @@ def predict_sentiment(review):
 st.markdown(
     """
     <div class="page-header">
-        <h1>🎮 Amazon Video Game Review Sentiment Analyzer</h1>
+        <h1>Amazon Video Game Review Sentiment Analyzer</h1>
         <p>Machine learning dashboard for analyzing Amazon video game sentiment.</p>
     </div>
     """,
@@ -205,10 +204,10 @@ st.markdown(
 
 page = st.sidebar.radio(
     "Navigation",
-    ["🔍 Review Analyzer", "📊 Dataset Dashboard", "🤖 Model Performance"],
+    ["Review Analyzer", "Dataset Dashboard", "Model Performance"],
 )
 
-if page == "🔍 Review Analyzer":
+if page == "Review Analyzer":
     st.subheader("Review Analyzer")
     review = st.text_area(
         "Enter a review",
@@ -258,7 +257,7 @@ if page == "🔍 Review Analyzer":
                 st.progress(min(100, max(0, prob / 100)))
                 st.write(f"{sentiment}: {prob:.2f}%")
 
-elif page == "📊 Dataset Dashboard":
+elif page == "Dataset Dashboard":
     st.subheader("Dataset Dashboard")
     st.caption("Summary of the full 48,371-review Amazon dataset used to train the model.")
 
@@ -311,7 +310,7 @@ elif page == "📊 Dataset Dashboard":
     st.write("### Review Length Summary")
     st.write(review_lengths.describe())
 
-elif page == "🤖 Model Performance":
+elif page == "Model Performance":
     st.subheader("Model Performance")
     st.caption("Evaluation of the final 30K TF-IDF + Logistic Regression model on the held-out test set.")
 
@@ -345,7 +344,7 @@ elif page == "🤖 Model Performance":
     st.bar_chart(comparison.set_index("Model")[["Accuracy", "Precision", "Recall", "F1 Score"]])
 
 st.sidebar.divider()
-st.sidebar.subheader("🤖 Model")
+st.sidebar.subheader("Model")
 st.sidebar.write(
     """**Algorithm:** Logistic Regression
 **Features:** 30,000 TF-IDF
