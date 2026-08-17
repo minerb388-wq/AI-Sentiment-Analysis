@@ -1,3 +1,4 @@
+import os
 import re
 
 import joblib
@@ -79,14 +80,16 @@ st.markdown(
 
 @st.cache_resource
 def load_model():
-    vectorizer = joblib.load("models/tfidf_vectorizer.joblib")
-    model = joblib.load("models/logistic_regression_model.joblib")
+    base_dir = os.path.dirname(__file__)
+    vectorizer = joblib.load(os.path.join(base_dir, "models/tfidf_vectorizer.joblib"))
+    model = joblib.load(os.path.join(base_dir, "models/logistic_regression_model.joblib"))
     return vectorizer, model
 
 
 @st.cache_data
 def load_dataset():
-    return pd.read_csv("data/processed/video_games_sentiment_clean.csv")
+    base_dir = os.path.dirname(__file__)
+    return pd.read_csv(os.path.join(base_dir, "data/processed/video_games_sentiment_clean.csv"))
 
 
 @st.cache_data
