@@ -176,10 +176,6 @@ important_words = {"not", "no", "never", "nor", "neither", "hardly", "barely", "
 stop_words = stop_words - important_words
 lemmatizer = WordNetLemmatizer()
 
-vectorizer, model = load_model()
-df = load_dataset()
-model_metrics = load_model_performance()
-
 
 def clean_text(text):
     text = str(text)
@@ -197,6 +193,7 @@ def clean_text(text):
 
 
 def predict_sentiment(review):
+    vectorizer, model = load_model()
     cleaned = clean_text(review)
     features = vectorizer.transform([cleaned])
     prediction = model.predict(features)[0]
@@ -274,87 +271,97 @@ elif page == "Dataset Dashboard":
     st.subheader("Dataset Dashboard")
     st.caption("Summary of the full 48,371-review Amazon dataset used to train the model.")
 
-    total_reviews = len(df)
-    sentiment_counts = df["sentiment"].value_counts().reindex(["positive", "neutral", "negative"], fill_value=0)
-    sentiment_percentages = (sentiment_counts / total_reviews * 100).round(1)
-    rating_counts = (
-        df["rating"]
-        .value_counts()
-        .sort_index()
-        .reindex([1, 2, 3, 4, 5], fill_value=0)
-    )
-    rating_labels = [f"{int(rating)}★" for rating in rating_counts.index]
-    rating_chart = pd.Series(rating_counts.values, index=rating_labels)
-
-    verified_counts = df["verified_purchase"].value_counts().reindex([True, False], fill_value=0)
-    verified_labels = verified_counts.index.map(lambda value: "Verified" if value else "Not Verified")
-    verified_chart = pd.Series(verified_counts.values, index=verified_labels)
-    sentiment_rating = pd.crosstab(df["rating"], df["sentiment"])
-
-    if "text_length" in df.columns:
-        review_lengths = df["text_length"]
+    df = load_dataset()
+    
+    if df is None:
+        st.error("Dataset could not be loaded. Please check the logs.")
     else:
-        review_lengths = df["text"].fillna("").astype(str).str.len()
+        total_reviews = len(df)
+        sentiment_counts = df["sentiment"].value_counts().reindex(["positive", "neutral", "negative"], fill_value=0)
+        sentiment_percentages = (sentiment_counts / total_reviews * 100).round(1)
+        rating_counts = (
+            df["rating"]
+            .value_counts()
+            .sort_index()
+            .reindex([1, 2, 3, 4, 5], fill_value=0)
+        )
+        rating_labels = [f"{int(rating)}★" for rating in rating_counts.index]
+        rating_chart = pd.Series(rating_counts.values, index=rating_labels)
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Reviews", f"{total_reviews:,}")
-    col2.metric("Positive", f"{sentiment_counts.get('positive', 0):,} ({sentiment_percentages.get('positive', 0):.1f}%)")
-    col3.metric("Negative", f"{sentiment_counts.get('negative', 0):,} ({sentiment_percentages.get('negative', 0):.1f}%)")
+        verified_counts = df["verified_purchase"].value_counts().reindex([True, False], fill_value=0)
+        verified_labels = verified_counts.index.map(lambda value: "Verified" if value else "Not Verified")
+        verified_chart = pd.Series(verified_counts.values, index=verified_labels)
+        sentiment_rating = pd.crosstab(df["rating"], df["sentiment"])
 
-    st.write("")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Neutral", f"{sentiment_counts.get('neutral', 0):,} ({sentiment_percentages.get('neutral', 0):.1f}%)")
-    col2.metric("Avg Review Length", f"{review_lengths.mean():.1f} chars")
-    col3.metric("Median Rating", f"{df['rating'].median():.1f}/5")
+        if "text_length" in df.columns:
+            review_lengths = df["text_length"]
+        else:
+            review_lengths = df["text"].fillna("").astype(str).str.len()
 
-    st.write("### Sentiment Distribution")
-    sentiment_chart = sentiment_counts.rename(index={"positive": "Positive", "neutral": "Neutral", "negative": "Negative"})
-    st.bar_chart(sentiment_chart)
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Reviews", f"{total_reviews:,}")
+        col2.metric("Positive", f"{sentiment_counts.get('positive', 0):,} ({sentiment_percentages.get('positive', 0):.1f}%)")
+        col3.metric("Negative", f"{sentiment_counts.get('negative', 0):,} ({sentiment_percentages.get('negative', 0):.1f}%)")
 
-    st.write("### Rating Distribution")
-    st.bar_chart(rating_chart)
+        st.write("")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Neutral", f"{sentiment_counts.get('neutral', 0):,} ({sentiment_percentages.get('neutral', 0):.1f}%)")
+        col2.metric("Avg Review Length", f"{review_lengths.mean():.1f} chars")
+        col3.metric("Median Rating", f"{df['rating'].median():.1f}/5")
 
-    st.write("### Verified Purchase Distribution")
-    st.bar_chart(verified_chart)
+        st.write("### Sentiment Distribution")
+        sentiment_chart = sentiment_counts.rename(index={"positive": "Positive", "neutral": "Neutral", "negative": "Negative"})
+        st.bar_chart(sentiment_chart)
 
-    st.write("### Sentiment by Star Rating")
-    st.bar_chart(sentiment_rating)
+        st.write("### Rating Distribution")
+        st.bar_chart(rating_chart)
 
-    st.write("### Review Length Summary")
+        st.write("### Verified Purchase Distribution")
+        st.bar_chart(verified_chart)
+
+        st.write("### Sentiment by Star Rating")
+        st.bar_chart(sentiment_rating)
+
+        st.write("### Review Length Summary")
     st.write(review_lengths.describe())
 
 elif page == "Model Performance":
     st.subheader("Model Performance")
     st.caption("Evaluation of the final 30K TF-IDF + Logistic Regression model on the held-out test set.")
 
-    metrics = model_metrics
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Accuracy", f"{metrics['accuracy'] * 100:.2f}%")
-    col2.metric("Precision", f"{metrics['precision'] * 100:.2f}%")
-    col3.metric("Recall", f"{metrics['recall'] * 100:.2f}%")
-    col4.metric("F1 Score", f"{metrics['f1'] * 100:.2f}%")
+    model_metrics = load_model_performance()
+    
+    if model_metrics is None:
+        st.error("Model metrics could not be loaded. Please check the logs.")
+    else:
+        metrics = model_metrics
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Accuracy", f"{metrics['accuracy'] * 100:.2f}%")
+        col2.metric("Precision", f"{metrics['precision'] * 100:.2f}%")
+        col3.metric("Recall", f"{metrics['recall'] * 100:.2f}%")
+        col4.metric("F1 Score", f"{metrics['f1'] * 100:.2f}%")
 
-    st.write("### Classification Report")
-    st.dataframe(metrics["class_report"], use_container_width=True)
+        st.write("### Classification Report")
+        st.dataframe(metrics["class_report"], use_container_width=True)
 
-    st.write("### Confusion Matrix")
-    st.dataframe(metrics["confusion_matrix"], use_container_width=True)
-    st.caption(
-        "The confusion matrix shows how many reviews were correctly or incorrectly classified for each sentiment class."
-    )
+        st.write("### Confusion Matrix")
+        st.dataframe(metrics["confusion_matrix"], use_container_width=True)
+        st.caption(
+            "The confusion matrix shows how many reviews were correctly or incorrectly classified for each sentiment class."
+        )
 
-    st.write("### Classifier Comparison")
-    comparison = pd.DataFrame(
-        {
-            "Model": ["Logistic Regression", "Naive Bayes", "Linear SVM"],
-            "Accuracy": [0.6834, 0.6660, 0.6578],
-            "Precision": [0.6844, 0.6723, 0.6552],
-            "Recall": [0.6834, 0.6660, 0.6578],
-            "F1 Score": [0.6837, 0.6678, 0.6562],
-        }
-    )
-    st.dataframe(comparison, use_container_width=True, hide_index=True)
-    st.bar_chart(comparison.set_index("Model")[["Accuracy", "Precision", "Recall", "F1 Score"]])
+        st.write("### Classifier Comparison")
+        comparison = pd.DataFrame(
+            {
+                "Model": ["Logistic Regression", "Naive Bayes", "Linear SVM"],
+                "Accuracy": [0.6834, 0.6660, 0.6578],
+                "Precision": [0.6844, 0.6723, 0.6552],
+                "Recall": [0.6834, 0.6660, 0.6578],
+                "F1 Score": [0.6837, 0.6678, 0.6562],
+            }
+        )
+        st.dataframe(comparison, use_container_width=True, hide_index=True)
+        st.bar_chart(comparison.set_index("Model")[["Accuracy", "Precision", "Recall", "F1 Score"]])
 
 st.sidebar.divider()
 st.sidebar.subheader("Model")
