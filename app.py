@@ -185,6 +185,16 @@ def load_model_performance(category):
     }
 
 
+@st.cache_data
+def load_model_comparison():
+    """Load reproducible model-comparison results when they are available."""
+    base_dir = os.path.dirname(__file__)
+    comparison_path = os.path.join(base_dir, "results", "model_comparison.csv")
+    if not os.path.exists(comparison_path):
+        return None
+    return pd.read_csv(comparison_path)
+
+
 try:
     stop_words = set(stopwords.words("english"))
 except LookupError:
@@ -237,7 +247,7 @@ st.markdown(
 
 page = st.sidebar.radio(
     "Navigation",
-    ["Review Analyzer", "Dataset Dashboard", "Model Performance"],
+    ["Review Analyzer", "Dataset Dashboard", "Model Performance", "Methodology"],
 )
 
 selected_category = st.sidebar.selectbox(
@@ -250,7 +260,7 @@ if page == "Review Analyzer":
     st.caption(f"Selected category: {selected_category}")
     review = st.text_area(
         "Enter a review",
-        value="I absolutely love this game. The graphics are amazing and the gameplay is fantastic.",
+        value="I absolutely love this product. It works exactly as expected.",
         height=160,
     )
 
@@ -291,7 +301,6 @@ if page == "Review Analyzer":
             st.write("Confidence by class:")
             st.bar_chart(
                 probability_df.set_index("Sentiment")["Probability"] * 100,
-                use_container_width=True,
             )
 
             st.write("Probability breakdown:")
@@ -357,7 +366,14 @@ elif page == "Dataset Dashboard":
         st.bar_chart(sentiment_rating)
 
         st.write("### Review Length Summary")
-        st.write(review_lengths.describe())
+        length_summary = review_lengths.describe().rename("Characters").to_frame()
+        st.dataframe(length_summary, width="content")
+
+        st.write("### Review Length Distribution")
+        length_bins = pd.cut(review_lengths, bins=12)
+        length_distribution = length_bins.value_counts(sort=False)
+        length_distribution.index = length_distribution.index.astype(str)
+        st.bar_chart(length_distribution)
 
 elif page == "Model Performance":
     st.subheader("Model Performance")
@@ -376,26 +392,55 @@ elif page == "Model Performance":
         col4.metric("F1 Score", f"{metrics['f1'] * 100:.2f}%")
 
         st.write("### Classification Report")
-        st.dataframe(metrics["class_report"], use_container_width=True)
+        st.dataframe(metrics["class_report"])
 
         st.write("### Confusion Matrix")
-        st.dataframe(metrics["confusion_matrix"], use_container_width=True)
+        st.dataframe(metrics["confusion_matrix"])
         st.caption(
             "The confusion matrix shows how many reviews were correctly or incorrectly classified for each sentiment class."
         )
 
         st.write("### Classifier Comparison")
-        comparison = pd.DataFrame(
-            {
-                "Model": ["Logistic Regression", "Naive Bayes", "Linear SVM"],
-                "Accuracy": [0.6834, 0.6660, 0.6578],
-                "Precision": [0.6844, 0.6723, 0.6552],
-                "Recall": [0.6834, 0.6660, 0.6578],
-                "F1 Score": [0.6837, 0.6678, 0.6562],
-            }
-        )
-        st.dataframe(comparison, use_container_width=True, hide_index=True)
-        st.bar_chart(comparison.set_index("Model")[["Accuracy", "Precision", "Recall", "F1 Score"]])
+        comparison = load_model_comparison()
+        if comparison is None:
+            st.info(
+                "Run `python evaluate_models.py` locally to generate a reproducible "
+                "baseline, Naive Bayes, and Logistic Regression comparison."
+            )
+        else:
+            comparison = comparison[comparison["Category"] == selected_category].copy()
+            metric_columns = ["Accuracy", "Precision", "Recall", "F1 Score"]
+            comparison[metric_columns] = comparison[metric_columns] * 100
+            st.dataframe(
+                comparison[["Model", *metric_columns, "Train Samples", "Test Samples"]],
+                column_config={
+                    column: st.column_config.NumberColumn(column, format="%.2f%%")
+                    for column in metric_columns
+                },
+                hide_index=True,
+            )
+            st.bar_chart(comparison.set_index("Model")[metric_columns])
+
+elif page == "Methodology":
+    st.subheader("Methodology and limitations")
+    st.markdown(
+        """
+        **Labels.** Star ratings are used as a sentiment proxy: 1–2 stars are
+        negative, 3 stars are neutral, and 4–5 stars are positive.
+
+        **Preprocessing.** The workflow removes missing and duplicate reviews,
+        strips HTML and URLs, lowercases text, removes stop words while preserving
+        key negation terms, and lemmatizes the remaining tokens.
+
+        **Evaluation.** Data is split into stratified 80/20 train and test sets
+        with a fixed random seed. TF-IDF learns its vocabulary from training text
+        only, preventing test-set feature leakage.
+
+        **Limitations.** Rating-derived labels can be noisy for mixed or sarcastic
+        reviews. TF-IDF models also have limited contextual understanding and may
+        not generalize to other languages or product categories.
+        """
+    )
 
 st.sidebar.divider()
 st.sidebar.subheader("Model")
@@ -403,6 +448,5 @@ st.sidebar.write(
     """**Algorithm:** Logistic Regression
 **Features:** 30,000 TF-IDF
 **N-grams:** 1–2
-**Accuracy:** 68.34%
-**F1 Score:** 68.37%"""
+**Evaluation:** See Model Performance"""
 )
