@@ -1,9 +1,17 @@
 import os
 import re
+import sqlite3
 
 import joblib
 import pandas as pd
 import streamlit as st
+from history_store import (
+    clear_analysis_history,
+    get_analysis_history,
+    initialize_database,
+    record_analysis,
+    save_feedback,
+)
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from sklearn.metrics import (
@@ -21,6 +29,12 @@ st.set_page_config(
     page_title="Amazon Review Sentiment Analyzer",
     layout="wide",
 )
+
+try:
+    initialize_database()
+    DATABASE_ERROR = None
+except (OSError, sqlite3.Error) as error:
+    DATABASE_ERROR = str(error)
 
 st.markdown(
     """
@@ -225,9 +239,12 @@ def clean_text(text):
     return " ".join(words)
 
 
-def predict_sentiment(review):
-    vectorizer, model = load_model(selected_category)
+def predict_sentiment(review, category):
     cleaned = clean_text(review)
+    if not cleaned:
+        raise ValueError("Enter at least one meaningful English word to analyse.")
+
+    vectorizer, model = load_model(category)
     features = vectorizer.transform([cleaned])
     prediction = model.predict(features)[0]
     probabilities = model.predict_proba(features)[0]
@@ -247,7 +264,13 @@ st.markdown(
 
 page = st.sidebar.radio(
     "Navigation",
-    ["Review Analyzer", "Dataset Dashboard", "Model Performance", "Methodology"],
+    [
+        "Review Analyzer",
+        "Dataset Dashboard",
+        "Model Performance",
+        "History & Feedback",
+        "Methodology",
+    ],
 )
 
 selected_category = st.sidebar.selectbox(
@@ -262,18 +285,22 @@ if page == "Review Analyzer":
         "Enter a review",
         value="I absolutely love this product. It works exactly as expected.",
         height=160,
+        max_chars=3000,
+        help="Submitted reviews are stored locally for the coursework feedback feature.",
     )
 
     if st.button("Analyze Sentiment"):
         if not review.strip():
             st.warning("Please enter a review before analyzing.")
+        elif not clean_text(review):
+            st.warning("Please enter at least one meaningful English word to analyze.")
         elif not category_model_available(selected_category):
             st.error(
                 f"The {selected_category} model is not available yet. "
                 "Prepare and train this category before analyzing reviews."
             )
         else:
-            prediction, probabilities = predict_sentiment(review)
+            prediction, probabilities = predict_sentiment(review, selected_category)
             probability_df = pd.DataFrame(
                 {
                     "Sentiment": ["Negative", "Neutral", "Positive"],
@@ -309,6 +336,28 @@ if page == "Review Analyzer":
                 prob = probabilities.get(key, 0.0) * 100
                 st.progress(min(100, max(0, prob / 100)))
                 st.write(f"{sentiment}: {prob:.2f}%")
+
+            if DATABASE_ERROR:
+                st.info(
+                    "The prediction is available, but local history storage is unavailable."
+                )
+            else:
+                try:
+                    analysis_id = record_analysis(
+                        selected_category,
+                        review,
+                        prediction,
+                        probabilities.get(prediction, 0.0),
+                    )
+                except (OSError, sqlite3.Error, ValueError):
+                    st.warning(
+                        "The prediction was shown, but it could not be saved to local history."
+                    )
+                else:
+                    st.caption(
+                        f"Saved locally as analysis #{analysis_id}. "
+                        "Add feedback from the History & Feedback page."
+                    )
 
 elif page == "Dataset Dashboard":
     st.subheader("Dataset Dashboard")
@@ -421,6 +470,145 @@ elif page == "Model Performance":
             )
             st.bar_chart(comparison.set_index("Model")[metric_columns])
 
+elif page == "History & Feedback":
+    st.subheader("History & Feedback")
+    st.caption(
+        "Submitted reviews and optional feedback are stored in this app's local SQLite database. "
+        "Do not enter confidential or personal information."
+    )
+
+    if DATABASE_ERROR:
+        st.error(
+            "The local history database is unavailable. Core sentiment predictions still work."
+        )
+    else:
+        try:
+            history = get_analysis_history()
+        except (OSError, sqlite3.Error):
+            st.error("History could not be loaded from the local database.")
+        else:
+            if history.empty:
+                st.info("No saved analyses yet. Analyze a review to create the first record.")
+            else:
+                def feedback_status(row):
+                    if pd.isna(row["prediction_correct"]):
+                        return "No feedback"
+                    if int(row["prediction_correct"]) == 1:
+                        return "Correct"
+                    return f"Corrected: {str(row['corrected_sentiment']).title()}"
+
+                history_display = history.copy()
+                history_display["Review"] = history_display["review_text"].str.slice(0, 160)
+                history_display["Prediction"] = history_display[
+                    "predicted_sentiment"
+                ].str.title()
+                history_display["Feedback"] = history_display.apply(
+                    feedback_status,
+                    axis=1,
+                )
+                history_display = history_display.rename(
+                    columns={
+                        "analysis_id": "Analysis ID",
+                        "created_at": "Created (UTC)",
+                        "category": "Category",
+                        "confidence": "Confidence",
+                    }
+                )[
+                    [
+                        "Analysis ID",
+                        "Created (UTC)",
+                        "Category",
+                        "Review",
+                        "Prediction",
+                        "Confidence",
+                        "Feedback",
+                    ]
+                ]
+                st.dataframe(
+                    history_display,
+                    column_config={
+                        "Confidence": st.column_config.NumberColumn(
+                            "Confidence",
+                            format="percent",
+                        ),
+                    },
+                    hide_index=True,
+                )
+
+                history_labels = {
+                    int(row.analysis_id): (
+                        f"#{int(row.analysis_id)} - {row.created_at} - "
+                        f"{row.category} - {row.predicted_sentiment.title()}"
+                    )
+                    for row in history.itertuples()
+                }
+
+                with st.container(border=True):
+                    st.write("### Add or update feedback")
+                    with st.form("feedback_form", border=False):
+                        analysis_id = st.selectbox(
+                            "Analysis to review",
+                            list(history_labels),
+                            format_func=lambda item: history_labels[item],
+                        )
+                        prediction_correct = st.radio(
+                            "Was the predicted sentiment correct?",
+                            ["Yes", "No"],
+                        )
+                        corrected_choice = st.selectbox(
+                            "Corrected sentiment if the prediction was incorrect",
+                            ["Not applicable", "Negative", "Neutral", "Positive"],
+                        )
+                        feedback_comment = st.text_area(
+                            "Optional feedback comment",
+                            max_chars=1000,
+                        )
+                        feedback_submitted = st.form_submit_button(
+                            "Save feedback",
+                            type="primary",
+                        )
+
+                    if feedback_submitted:
+                        corrected_sentiment = (
+                            None
+                            if corrected_choice == "Not applicable"
+                            else corrected_choice.lower()
+                        )
+                        try:
+                            save_feedback(
+                                analysis_id,
+                                prediction_correct == "Yes",
+                                corrected_sentiment,
+                                feedback_comment,
+                            )
+                        except ValueError as error:
+                            st.warning(str(error))
+                        except (OSError, sqlite3.Error):
+                            st.error("Feedback could not be saved to the local database.")
+                        else:
+                            st.success("Feedback saved.")
+                            st.rerun()
+
+            with st.expander("Manage locally stored data"):
+                st.warning("This permanently removes all saved analyses and feedback.")
+                confirm_clear = st.checkbox(
+                    "I understand that this action cannot be undone.",
+                    key="confirm_clear_history",
+                )
+                if st.button(
+                    "Clear local history",
+                    icon=":material/delete:",
+                    disabled=not confirm_clear,
+                    key="clear_history",
+                ):
+                    try:
+                        deleted_count = clear_analysis_history()
+                    except (OSError, sqlite3.Error):
+                        st.error("Local history could not be cleared.")
+                    else:
+                        st.success(f"Deleted {deleted_count} saved analysis record(s).")
+                        st.rerun()
+
 elif page == "Methodology":
     st.subheader("Methodology and limitations")
     st.markdown(
@@ -435,6 +623,9 @@ elif page == "Methodology":
         **Evaluation.** Data is split into stratified 80/20 train and test sets
         with a fixed random seed. TF-IDF learns its vocabulary from training text
         only, preventing test-set feature leakage.
+
+        **Local database.** Submitted review text, category, prediction, confidence,
+        and optional feedback are stored in SQLite for the coursework demonstration.
 
         **Limitations.** Rating-derived labels can be noisy for mixed or sarcastic
         reviews. TF-IDF models also have limited contextual understanding and may

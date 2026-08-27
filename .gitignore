@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 data/raw/
+data/app_history.db
+data/app_history.db-shm
+data/app_history.db-wal
