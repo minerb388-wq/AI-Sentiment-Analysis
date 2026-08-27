@@ -1,8 +1,13 @@
 import pandas as pd
 import re
+import sys
 
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
+
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 INPUT_FILE = "data/processed/video_games_sentiment_50k.csv"

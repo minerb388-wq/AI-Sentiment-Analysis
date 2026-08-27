@@ -79,34 +79,55 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+CATEGORY_CONFIG = {
+    "Video Games": {
+        "dataset": "data/processed/video_games_sentiment_clean.csv",
+        "vectorizer": "models/tfidf_vectorizer.joblib",
+        "model": "models/logistic_regression_model.joblib",
+    },
+    "All Beauty": {
+        "dataset": "data/processed/all_beauty_sentiment_50k.csv",
+        "vectorizer": "models/all_beauty_tfidf_vectorizer.joblib",
+        "model": "models/all_beauty_logistic_regression_model.joblib",
+    },
+}
+
+
+def category_model_available(category):
+    base_dir = os.path.dirname(__file__)
+    config = CATEGORY_CONFIG[category]
+    return all(
+        os.path.exists(os.path.join(base_dir, config[key]))
+        for key in ("vectorizer", "model")
+    )
+
 
 @st.cache_resource
-def load_model():
+def load_model(category):
     base_dir = os.path.dirname(__file__)
-    vectorizer = joblib.load(os.path.join(base_dir, "models/tfidf_vectorizer.joblib"))
-    model = joblib.load(os.path.join(base_dir, "models/logistic_regression_model.joblib"))
+    config = CATEGORY_CONFIG[category]
+    vectorizer = joblib.load(os.path.join(base_dir, config["vectorizer"]))
+    model = joblib.load(os.path.join(base_dir, config["model"]))
     return vectorizer, model
 
 
 @st.cache_data
-def load_dataset():
+def load_dataset(category):
     base_dir = os.path.dirname(__file__)
-    # Try both possible filenames
-    csv_path1 = os.path.join(base_dir, "data/processed/video_games_sentiment_clean.csv")
-    csv_path2 = os.path.join(base_dir, "data/processed/video_games_sentiment_50k.csv")
-    
-    if os.path.exists(csv_path1):
-        return pd.read_csv(csv_path1)
-    elif os.path.exists(csv_path2):
-        return pd.read_csv(csv_path2)
-    else:
-        st.warning("Dataset files not found. Dataset analysis page will not work.")
-        return None
+    dataset_path = os.path.join(base_dir, CATEGORY_CONFIG[category]["dataset"])
+
+    if os.path.exists(dataset_path):
+        return pd.read_csv(dataset_path)
+
+    st.warning(f"{category} dataset is not available yet.")
+    return None
 
 
 @st.cache_data
-def load_model_performance():
-    df = load_dataset()
+def load_model_performance(category):
+    df = load_dataset(category)
+    if df is None:
+        return None
     X = df["clean_text"]
     y = df["sentiment"]
 
@@ -118,7 +139,7 @@ def load_model_performance():
         stratify=y,
     )
 
-    vectorizer, model = load_model()
+    vectorizer, model = load_model(category)
     X_test_tfidf = vectorizer.transform(X_test)
     predictions = model.predict(X_test_tfidf)
 
@@ -195,7 +216,7 @@ def clean_text(text):
 
 
 def predict_sentiment(review):
-    vectorizer, model = load_model()
+    vectorizer, model = load_model(selected_category)
     cleaned = clean_text(review)
     features = vectorizer.transform([cleaned])
     prediction = model.predict(features)[0]
@@ -207,8 +228,8 @@ def predict_sentiment(review):
 st.markdown(
     """
     <div class="page-header">
-        <h1>Amazon Video Game Review Sentiment Analyzer</h1>
-        <p>Machine learning dashboard for analyzing Amazon video game sentiment.</p>
+        <h1>Amazon Review Sentiment Analyzer</h1>
+        <p>Machine learning dashboard for analyzing Amazon product-review sentiment.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -219,8 +240,14 @@ page = st.sidebar.radio(
     ["Review Analyzer", "Dataset Dashboard", "Model Performance"],
 )
 
+selected_category = st.sidebar.selectbox(
+    "Review category",
+    list(CATEGORY_CONFIG),
+)
+
 if page == "Review Analyzer":
     st.subheader("Review Analyzer")
+    st.caption(f"Selected category: {selected_category}")
     review = st.text_area(
         "Enter a review",
         value="I absolutely love this game. The graphics are amazing and the gameplay is fantastic.",
@@ -230,6 +257,11 @@ if page == "Review Analyzer":
     if st.button("Analyze Sentiment"):
         if not review.strip():
             st.warning("Please enter a review before analyzing.")
+        elif not category_model_available(selected_category):
+            st.error(
+                f"The {selected_category} model is not available yet. "
+                "Prepare and train this category before analyzing reviews."
+            )
         else:
             prediction, probabilities = predict_sentiment(review)
             probability_df = pd.DataFrame(
@@ -271,10 +303,10 @@ if page == "Review Analyzer":
 
 elif page == "Dataset Dashboard":
     st.subheader("Dataset Dashboard")
-    st.caption("Summary of the full 48,371-review Amazon dataset used to train the model.")
+    st.caption(f"Summary of the {selected_category} review dataset.")
 
-    df = load_dataset()
-    
+    df = load_dataset(selected_category)
+
     if df is None:
         st.error("Dataset could not be loaded. Please check the logs.")
     else:
@@ -329,10 +361,10 @@ elif page == "Dataset Dashboard":
 
 elif page == "Model Performance":
     st.subheader("Model Performance")
-    st.caption("Evaluation of the final 30K TF-IDF + Logistic Regression model on the held-out test set.")
+    st.caption(f"Evaluation of the {selected_category} 30K TF-IDF + Logistic Regression model.")
 
-    model_metrics = load_model_performance()
-    
+    model_metrics = load_model_performance(selected_category)
+
     if model_metrics is None:
         st.error("Model metrics could not be loaded. Please check the logs.")
     else:
